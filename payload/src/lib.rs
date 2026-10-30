@@ -3,18 +3,21 @@ use std::os::unix::net::UnixListener;
 
 const SOCK: &str = "/tmp/solara-exec.sock";
 
-extern "C" fn _solara_init() {
+/// Exported so the injector can call it via dlsym after dlopen.
+/// Runs the IPC socket server on a background thread.
+#[no_mangle]
+pub extern "C" fn solara_payload_start() {
     std::thread::spawn(server);
 }
-
-#[link_section = ".init_array"]
-static INIT: [extern "C" fn(); 1] = [_solara_init];
 
 fn server() {
     let _ = std::fs::remove_file(SOCK);
     let l = match UnixListener::bind(SOCK) {
         Ok(l) => l,
-        Err(_) => return,
+        Err(e) => {
+            eprintln!("[solara-payload] bind {SOCK}: {e}");
+            return;
+        }
     };
     loop {
         let Ok((mut s, _)) = l.accept() else { continue };

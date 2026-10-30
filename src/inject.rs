@@ -2,6 +2,24 @@ use crate::{mem, ptrace};
 use std::ffi::{c_void, CStr};
 use std::fs;
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
+
+fn retry_find_func(pid: i32, name: &str) -> Result<u64, String> {
+    for attempt in 0..20 {
+        match find_func_remote(pid, name) {
+            Ok(addr) => return Ok(addr),
+            Err(e) if attempt < 19 => {
+                if attempt == 0 {
+                    eprintln!("  waiting for {name} in target maps...");
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!()
+}
 
 #[repr(C)]
 struct DlInfo {
@@ -52,15 +70,10 @@ fn find_func_remote(pid: i32, name: &str) -> Result<u64, String> {
         .unwrap_or(&fname)
         .to_string();
 
-    eprintln!("  dbg     {name}: local={local_addr:#x} base={local_base:#x} off={offset:#x} lib={lib_name}");
+    eprintln!("  {name}: local={local_addr:#x} base={local_base:#x} off={offset:#x} lib={lib_name}");
 
     let remote_maps = fs::read_to_string(format!("/proc/{pid}/maps"))
         .map_err(|e| format!("remote maps: {e}"))?;
-
-    eprintln!("  dbg     remote maps first 5 lines:");
-    for line in remote_maps.lines().take(5) {
-        eprintln!("    {line}");
-    }
 
     for line in remote_maps.lines() {
         if line.contains(lib_name.as_str()) {
@@ -85,13 +98,21 @@ fn find_func_remote(pid: i32, name: &str) -> Result<u64, String> {
 /// 5. Find dlopen in target
 /// 6. call_remote(dlopen, path, RTLD_NOW) → .so loads, constructors run
 /// 7. Detach (RAII)
-pub fn inject_so(pid: i32, so_path: &str) -> Result<(), String> {
-    let _guard = ptrace::attach(pid)?;
-
-    let mmap_addr = find_func_remote(pid, "mmap")?;
+pub fn inject_so(pid: i32, so_path: &str, start_symbol: Option<&str>) -> Result<(), String> {
+    // Find function addresses BEFORE attaching.
+    // The target must be running so ld.so can finish loading libc.
+    let mmap_addr = retry_find_func(pid, "mmap")?;
     eprintln!("  mmap    @ {mmap_addr:#x}");
 
-    let path_c = format!("{so_path}\0");
+    let dlopen_addr = retry_find_func(pid, "dlopen")?;
+    eprintln!("  dlopen  @ {dlopen_addr:#x}");
+
+    let dlsym_addr = retry_find_func(pid, "dlsym")?;
+    eprintln!("  dlsym   @ {dlsym_addr:#x}");
+
+    // NOW attach — target is stopped from here until guard drops
+    let _guard = ptrace::attach(pid)?;
+
     let remote_buf = ptrace::call_remote(pid, mmap_addr, &[
         0,           // addr = NULL
         4096,        // len
@@ -106,16 +127,34 @@ pub fn inject_so(pid: i32, so_path: &str) -> Result<(), String> {
     }
     eprintln!("  alloc   @ {remote_buf:#x}");
 
+    // Layout in the allocated page:
+    //   [0x000] .so path  (NUL-terminated)
+    //   [0x200] start symbol name (NUL-terminated)
+    let path_c = format!("{so_path}\0");
     mem::write_mem(pid, remote_buf, path_c.as_bytes())?;
 
-    let dlopen_addr = find_func_remote(pid, "dlopen")?;
-    eprintln!("  dlopen  @ {dlopen_addr:#x}");
+    let sym = start_symbol.unwrap_or("solara_payload_start");
+    let sym_c = format!("{sym}\0");
+    let sym_addr = remote_buf + 0x200;
+    mem::write_mem(pid, sym_addr, sym_c.as_bytes())?;
 
+    // dlopen(path, RTLD_NOW)
     let handle = ptrace::call_remote(pid, dlopen_addr, &[remote_buf, 2])?;
     if handle == 0 {
         return Err("dlopen returned NULL (check .so path is valid in target's mount ns)".into());
     }
-
     eprintln!("  loaded  handle={handle:#x}");
+
+    // dlsym(handle, sym)
+    let fn_addr = ptrace::call_remote(pid, dlsym_addr, &[handle, sym_addr])?;
+    if fn_addr == 0 {
+        return Err(format!("dlsym({sym}) returned NULL — symbol not exported?"));
+    }
+    eprintln!("  {sym} @ {fn_addr:#x}");
+
+    // Call the exported entry point
+    ptrace::call_remote(pid, fn_addr, &[])?;
+    eprintln!("  started");
+
     Ok(())
 }

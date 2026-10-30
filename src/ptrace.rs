@@ -122,12 +122,15 @@ fn write_code_byte(pid: i32, addr: u64, byte: u8) -> Result<(), String> {
 }
 
 /// Call a function in the target process by:
-/// 1. Save regs, save original byte at return address
-/// 2. Write 0xCC (int3) at return address (PTRACE_POKETEXT bypasses r-x page protection)
-/// 3. Set rip = function, set arg registers (SysV x86_64 ABI)
-/// 4. PTRACE_CONT → function executes → returns to 0xCC → SIGTRAP
-/// 5. Read rax (return value)
-/// 6. Restore original byte + registers
+/// 1. Save regs, save original byte at saved.rip
+/// 2. Write 0xCC (int3) at saved.rip — this is our return catch point
+/// 3. Build a new stack frame 2 KiB below current rsp, 16-byte aligned:
+///    write saved.rip as the return address at (new_rsp - 8), set rsp = new_rsp - 8
+///    (SysV ABI: at function entry rsp ≡ 8 mod 16, return address at *rsp)
+/// 4. Set rip = function, set arg registers (rdi, rsi, rdx, rcx, r8, r9)
+/// 5. PTRACE_CONT → function runs → `ret` pops our return address → hits 0xCC → SIGTRAP
+/// 6. Read rax (return value)
+/// 7. Restore original byte + registers (including original rsp)
 pub fn call_remote(pid: i32, func: u64, args: &[u64]) -> Result<u64, String> {
     if args.len() > 6 {
         return Err("max 6 args".into());
@@ -139,8 +142,15 @@ pub fn call_remote(pid: i32, func: u64, args: &[u64]) -> Result<u64, String> {
 
     write_code_byte(pid, orig_rip, 0xCC)?;
 
+    // Build fake stack frame. 16-byte align, 2 KiB below current rsp so the
+    // callee has room, then place the return address at (aligned - 8).
+    let aligned = saved.rsp.wrapping_sub(0x800) & !0xFu64;
+    let func_rsp = aligned - 8;
+    mem::write_mem(pid, func_rsp, &orig_rip.to_le_bytes())?;
+
     let mut regs = saved;
     regs.rip = func;
+    regs.rsp = func_rsp;
     regs.orig_rax = !0u64;
 
     let arg_slots: [&mut u64; 6] = [

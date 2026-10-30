@@ -127,7 +127,9 @@ fn inject_test() {
     let pid = child.id() as i32;
     println!("target:  pid={pid}");
 
-    let result = inject::inject_so(pid, &so);
+    std::thread::sleep(Duration::from_millis(300));
+
+    let result = inject::inject_so(pid, &so, None);
     if let Err(e) = result {
         let _ = child.kill();
         die(&format!("inject failed: {e}"));
@@ -311,7 +313,7 @@ fn main() {
         "inject" => {
             let pid = pid();
             let so = args.get(3).unwrap_or_else(|| die("usage: solara inject <pid> <path.so>"));
-            inject::inject_so(pid, so).unwrap_or_else(|e| die(&e));
+            inject::inject_so(pid, so, None).unwrap_or_else(|e| die(&e));
             println!("injected {so} into pid {pid}");
         }
         "exec" => {
