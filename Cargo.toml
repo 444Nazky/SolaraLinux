@@ -6,6 +6,9 @@ edition = "2021"
 [dependencies]
 libc = "0.2"
 
+[workspace]
+members = [".", "payload"]
+
 [profile.release]
 lto = true
 strip = true
