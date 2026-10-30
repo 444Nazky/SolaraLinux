@@ -11,13 +11,17 @@ Built for Arch Linux, plain Rust, one dependency (`libc`).
 ## Quick start
 
 ```sh
-cargo build --release
+git clone <repo> solara && cd solara
+make                                   # release binary + payload
 
-sudo sysctl kernel.yama.ptrace_scope=0   # see "The permission gate" below
+sudo sysctl kernel.yama.ptrace_scope=0 # see "The permission gate"
 launch your Roblox client (Sober)
 
-./target/release/solara ui               # ← opens the control panel
+make ui                                # ← opens the control panel
 ```
+
+`make doctor` checks everything first if you want to see what is missing.
+Prefer `cargo` directly? `cargo build --release` does the same thing.
 
 Then in the panel: click a target → **Attach** → type a script → **Execute**.
 
@@ -185,21 +189,42 @@ No GTK, no Qt, no WebKit, no Node.
 ## Build
 
 ```sh
+make                 # release binary + payload
+make payload         # payload only
+make ui              # build, then open the panel
+make test            # selftest + inject-test
+make doctor          # preflight checks
+make dist            # dist/solara-linux-x86_64.tar.gz
+make clean
+```
+
+`make help` lists everything. Plain cargo works too:
+
+```sh
 cargo build --release
 ```
 
-Produces two artifacts:
+Two artifacts land in `target/release/`:
 
 ```
-target/release/solara            the CLI + UI server
-target/release/libpayload.so     the injected shared object
+solara            the CLI + UI server
+libpayload.so     the injected shared object
 ```
 
-The `libpayload.so` must sit where `solara` can find it — the release dir is
-one of the probed locations, so the command above is enough. If you move the
-binary elsewhere, use `solara inject <pid> /full/path/libpayload.so`.
+`libpayload.so` is looked up next to the binary, then in `../lib/solara/`,
+then in the various `target/` dirs — so a release build, a debug build, and an
+installed copy all find it without configuration.
 
-`cargo build` (debug) also works; the payload is loaded from `target/debug/`.
+### Install
+
+```sh
+make install                 # ~/.local/bin + ~/.local/lib/solara + .desktop
+PREFIX=/usr sudo make install
+make uninstall
+```
+
+This drops a `solara-ui.desktop` entry too, so the panel is one click from your
+application launcher, not just a terminal command.
 
 ---
 
@@ -388,16 +413,28 @@ namespaces, not the toolkit.
 ## Project layout
 
 ```
+Makefile               build / install / doctor / dist targets
 src/main.rs            CLI entry, command dispatch, self-tests
 src/mem.rs             process_vm_readv/writev, /proc maps, hexdump, scanner
 src/ptrace.rs          attach, get/setregs, call_remote (int3 technique)
 src/inject.rs          symbol resolution, .so staging, dlopen/dlsym pipeline
 src/sober.rs           namespace detection, setns+fork, flatpak ids
 src/ui.rs              local HTTP server + JSON-free API
-src/ui_assets/index.html   the panel (embedded via include_str!)
 src/trace.rs           shared log buffer (terminal and UI see the same trace)
+src/ui_assets/
+  index.html             markup
+  app.css                panel styling
+  app.js                 panel behaviour
 payload/src/lib.rs     the injected .so: exports solara_payload_start
+scripts/install.sh     install to PREFIX, writes the .desktop entry
+scripts/uninstall.sh   reverse of the above
+scripts/doctor.sh      ptrace, payload, client, flatpak preflight
+packaging/             .desktop template
+examples/              sample scripts for the Execute panel
 ```
+
+The UI is three files served by `src/ui.rs` and embedded with `include_str!`,
+so the binary is still self-contained.
 
 ---
 

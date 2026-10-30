@@ -111,4 +111,4 @@ clean:
 	@rm -rf dist
 
 help:
-	@sed -n '2,16p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,10p' Makefile | sed 's/^# \{0,1\}//'
