@@ -70,14 +70,22 @@ pub fn find_all(hay: &[u8], needle: &[u8]) -> Vec<usize> {
 pub fn scan(pid: i32, needle: &[u8]) -> Result<Vec<u64>, String> {
     let regions = maps(pid)?;
     let mut hits = Vec::new();
+    let mut reads_ok = 0u64;
+    let mut last_err = String::new();
     for r in regions.iter().filter(|r| r.perms.starts_with("rw")) {
         let mut off = r.start;
         while off < r.end {
             let span = (r.end - off).min(4 << 20) as usize;
             let want = ((r.end - off) as usize).min(span + needle.len().saturating_sub(1));
-            if let Ok(data) = read_mem(pid, off, want) {
-                for i in find_all(&data, needle) {
-                    hits.push(off + i as u64);
+            match read_mem(pid, off, want) {
+                Ok(data) => {
+                    reads_ok += 1;
+                    for i in find_all(&data, needle) {
+                        hits.push(off + i as u64);
+                    }
+                }
+                Err(e) => {
+                    last_err = e;
                 }
             }
             if (off + span as u64) <= off {
@@ -86,22 +94,32 @@ pub fn scan(pid: i32, needle: &[u8]) -> Result<Vec<u64>, String> {
             off += span as u64;
         }
     }
+    if hits.is_empty() && reads_ok == 0 && !last_err.is_empty() {
+        return Err(last_err);
+    }
     Ok(hits)
 }
 
-pub fn hexdump(data: &[u8], base: u64) {
+pub fn hexdump_to_string(data: &[u8], base: u64) -> String {
+    let mut out = String::with_capacity(data.len() * 4);
     for (i, chunk) in data.chunks(16).enumerate() {
-        print!("{:016x}  ", base + (i * 16) as u64);
+        use std::fmt::Write;
+        let _ = write!(out, "{:016x}  ", base + (i * 16) as u64);
         for b in chunk {
-            print!("{b:02x} ");
+            let _ = write!(out, "{b:02x} ");
         }
         for _ in chunk.len()..16 {
-            print!("   ");
+            out.push_str("   ");
         }
-        print!(" |");
+        out.push_str(" |");
         for b in chunk {
-            print!("{}", if b.is_ascii_graphic() { *b as char } else { '.' });
+            out.push(if b.is_ascii_graphic() { *b as char } else { '.' });
         }
-        println!("|");
+        out.push_str("|\n");
     }
+    out
+}
+
+pub fn hexdump(data: &[u8], base: u64) {
+    print!("{}", hexdump_to_string(data, base));
 }

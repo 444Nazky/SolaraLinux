@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>solara</title>
+<style>
+  :root {
+    --bg: #08090b;
+    --panel: #0d0f13;
+    --panel2: #11141a;
+    --line: #1c2129;
+    --line2: #2a313c;
+    --text: #e6e9ee;
+    --muted: #79839a;
+    --dim: #4c5566;
+    --accent: #5eead4;
+    --accent-dim: #1e4d47;
+    --danger: #fb7185;
+    --warn: #fbbf24;
+    --ok: #4ade80;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.5 var(--mono);
+    -webkit-font-smoothing: antialiased;
+    padding: 18px;
+  }
+  .wrap { max-width: 1440px; margin: 0 auto; height: 100%; display: flex; flex-direction: column; gap: 14px; }
+
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding-bottom: 12px; border-bottom: 1px solid var(--line);
+  }
+  .brand { font-size: 15px; letter-spacing: .28em; font-weight: 600; }
+  .brand span { color: var(--accent); }
+  .sub { color: var(--dim); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+  .grow { flex: 1; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+  .dot.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(74,222,128,.12); }
+
+  .grid {
+    flex: 1; min-height: 0;
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 14px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    display: flex; flex-direction: column;
+    min-height: 0; overflow: hidden;
+  }
+  .panel > header {
+    padding: 10px 13px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px;
+    background: linear-gradient(180deg, var(--panel2), var(--panel));
+  }
+  .panel h2 {
+    margin: 0; font-size: 10px; font-weight: 600;
+    letter-spacing: .22em; text-transform: uppercase; color: var(--muted);
+  }
+  .body { padding: 13px; overflow: auto; min-height: 0; }
+  .body.flush { padding: 0; }
+
+  button {
+    font: inherit; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text); background: var(--panel2);
+    border: 1px solid var(--line2); border-radius: 5px;
+    padding: 7px 13px; cursor: pointer;
+    transition: border-color .12s, background .12s, color .12s;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--accent); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: .35; cursor: default; }
+  button.primary { border-color: var(--accent-dim); color: var(--accent); background: rgba(94,234,212,.06); }
+  button.primary:hover:not(:disabled) { background: rgba(94,234,212,.12); }
+  button.sm { padding: 4px 9px; font-size: 10px; letter-spacing: .08em; }
+  button.ghost { background: transparent; border-color: var(--line); }
+
+  .targets { width: 100%; border-collapse: collapse; }
+  .targets thead th {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--panel);
+    text-align: left; font-size: 9.5px; font-weight: 600;
+    letter-spacing: .18em; text-transform: uppercase; color: var(--dim);
+    padding: 8px 13px; border-bottom: 1px solid var(--line);
+  }
+  .targets tbody tr { border-bottom: 1px solid rgba(28,33,41,.55); cursor: pointer; }
+  .targets tbody tr:hover { background: rgba(94,234,212,.035); }
+  .targets tbody tr.sel { background: rgba(94,234,212,.06); }
+  .targets tbody tr.sel td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+  .targets td { padding: 8px 13px; vertical-align: middle; }
+  .pid { color: var(--accent); }
+  .name { color: var(--text); }
+  .cmd { color: var(--dim); font-size: 11px; max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag {
+    font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 3px; border: 1px solid var(--line2); color: var(--muted);
+  }
+  .tag.iso { border-color: #4a3a1a; color: var(--warn); }
+  .tag.att { border-color: var(--accent-dim); color: var(--accent); background: rgba(94,234,212,.07); }
+
+  textarea {
+    width: 100%; min-height: 150px; resize: vertical;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 11px; font: inherit; line-height: 1.6;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--accent-dim); }
+  input {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 5px;
+    padding: 7px 9px; font: inherit; font-size: 12px; outline: none; width: 100%;
+  }
+  input:focus { border-color: var(--accent-dim); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row + .row { margin-top: 9px; }
+  .lbl { font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); width: 62px; flex: none; }
+
+  .logpanel { grid-column: 1 / -1; height: 200px; }
+  #log {
+    margin: 0; padding: 11px 13px; overflow: auto; height: 100%;
+    font-size: 12px; line-height: 1.65; white-space: pre-wrap; word-break: break-word;
+    color: var(--muted);
+  }
+  #log .l-ok { color: var(--ok); }
+  #log .l-err { color: var(--danger); }
+  #log .l-warn { color: var(--warn); }
+  #log .l-in { color: var(--accent); }
+  #log .l-dim { color: var(--dim); }
+
+  .chip {
+    font-size: 10.5px; padding: 3px 8px; border-radius: 20px;
+    border: 1px solid var(--line2); color: var(--muted);
+  }
+  .chip.live { border-color: var(--accent-dim); color: var(--accent); }
+  .empty { color: var(--dim); text-align: center; padding: 34px 16px; font-size: 12px; }
+  .empty b { color: var(--muted); font-weight: 500; }
+
+  @media (max-width: 940px) {
+    .grid { grid-template-columns: 1fr; grid-template-rows: auto auto auto; }
+    .cmd { max-width: 160px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">SOLARA<span>.</span></div>
+    <div class="sub">linux roblox toolkit</div>
+    <div class="grow"></div>
+    <div class="dot" id="dot"></div>
+    <div class="sub" id="status">idle</div>
+    <button class="ghost sm" onclick="refresh()">Refresh</button>
+  </header>
+
+  <div class="grid">
+    <section class="panel">
+      <header>
+        <h2>Targets</h2>
+        <div class="grow"></div>
+        <span class="chip" id="count">0</span>
+      </header>
+      <div class="body flush">
+        <table class="targets">
+          <thead><tr><th>pid</th><th>process</th><th>ns</th><th>flatpak</th><th></th></tr></thead>
+          <tbody id="rows"><tr><td colspan="5" class="empty">scanning…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header>
+        <h2>Execute</h2>
+        <div class="grow"></div>
+        <span class="chip" id="target">no target</span>
+      </header>
+      <div class="body">
+        <textarea id="script" spellcheck="false">print("hello from solara")</textarea>
+        <div class="row" style="margin-top:10px">
+          <button class="primary" id="btnExec" onclick="run()" disabled>Execute</button>
+          <button class="ghost sm" onclick="toggleHint()">?</button>
+          <div class="grow"></div>
+          <span class="sub" style="font-size:9.5px">ctrl+enter</span>
+        </div>
+        <div id="hint" class="sub" style="display:none;margin-top:10px;line-height:1.7;text-transform:none;letter-spacing:0;font-size:11px">
+          Attach first. The payload currently echoes scripts back — injection and IPC are
+          live, the Luau VM hook is not. See README.
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header><h2>Memory</h2></header>
+      <div class="body">
+        <div class="row"><span class="lbl">addr</span><input id="addr" placeholder="0x7f..."></div>
+        <div class="row"><span class="lbl">len</span><input id="len" value="64"></div>
+        <div class="row">
+          <button onclick="readMem()" id="btnRead" disabled>Read</button>
+          <div class="grow"></div>
+        </div>
+        <div class="row" style="margin-top:14px"><span class="lbl">pattern</span><input id="pat" placeholder="deadbeef"></div>
+        <div class="row">
+          <button onclick="scanMem()" id="btnScan" disabled>Scan</button>
+          <div class="grow"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel logpanel">
+      <header>
+        <h2>Output</h2>
+        <div class="grow"></div>
+        <button class="ghost sm" onclick="clearLog()">Clear</button>
+      </header>
+      <pre id="log"></pre>
+    </section>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const rows = $('#rows');
+const logEl = $('#log');
+let selected = null;
+const attached = new Set();
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function log(text, kind = '') {
+  const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 30;
+  const span = document.createElement('span');
+  span.className = kind ? 'l-' + kind : '';
+  span.textContent = text.endsWith('\n') ? text : text + '\n';
+  logEl.appendChild(span);
+  if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+  while (logEl.childNodes.length > 2000) logEl.removeChild(logEl.firstChild);
+}
+
+function clearLog() { logEl.textContent = ''; }
+
+function status(s, live) {
+  $('#status').textContent = s;
+  $('#dot').className = 'dot' + (live ? ' on' : '');
+}
+
+async function api(path, data) {
+  const opt = data
+    ? { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'}, body: new URLSearchParams(data) }
+    : { method: 'GET' };
+  const res = await fetch(path, opt);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return await res.text();
+}
+
+function select(pid) {
+  selected = pid;
+  $('#target').textContent = pid ? 'pid ' + pid : 'no target';
+  $('#target').className = 'chip' + (pid ? ' live' : '');
+  $('#btnExec').disabled = !pid;
+  $('#btnRead').disabled = !pid;
+  $('#btnScan').disabled = !pid;
+  [...rows.querySelectorAll('tr')].forEach(tr =>
+    tr.classList.toggle('sel', tr.dataset.pid === String(pid)));
+}
+
+function render(list) {
+  if (!list.length) {
+    rows.innerHTML = '<tr><td colspan="5" class="empty">no roblox / sober / wine process found<br><b>launch the client first, then refresh</b></td></tr>';
+    $('#count').textContent = '0';
+    return;
+  }
+  rows.innerHTML = '';
+  for (const line of list) {
+    const [pid, fp, ns, ...rest] = line.split('\t');
+    const cmd = rest.join('\t');
+    const base = cmd.split(' ')[0].split('/').pop() || cmd;
+    const tr = document.createElement('tr');
+    tr.dataset.pid = pid;
+    tr.onclick = e => { if (e.target.tagName !== 'BUTTON') select(Number(pid)); };
+    const isAtt = attached.has(String(pid));
+    tr.innerHTML =
+      `<td class="pid">${esc(pid)}</td>` +
+      `<td><div class="name">${esc(base)}</div><div class="cmd" title="${esc(cmd)}">${esc(cmd)}</div></td>` +
+      `<td><span class="tag ${ns === 'isolated' ? 'iso' : ''}">${esc(ns)}</span></td>` +
+      `<td><span class="tag">${esc(fp)}</span></td>` +
+      `<td style="text-align:right">` +
+        (isAtt
+          ? '<span class="tag att">attached</span>'
+          : `<button class="sm" onclick="attach(${Number(pid)}, this)">Attach</button>`) +
+      '</td>';
+    rows.appendChild(tr);
+  }
+  $('#count').textContent = list.length;
+  if (selected && !list.some(l => l.split('\t')[0] === String(selected))) select(null);
+}
+
+async function refresh() {
+  status('scanning', false);
+  try {
+    const text = await api('/api/processes');
+    const list = text.trim() ? text.trim().split('\n') : [];
+    render(list);
+    status(list.length ? list.length + ' target(s)' : 'idle', list.length > 0);
+  } catch (e) {
+    log('error  refresh: ' + e.message, 'err');
+    status('error', false);
+  }
+}
+
+async function attach(pid, btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  status('attaching', false);
+  log('→ attach pid ' + pid, 'in');
+  try {
+    const out = await api('/api/attach', { pid });
+    for (const line of out.split('\n')) {
+      if (!line.trim()) continue;
+      const kind = line.startsWith('error') ? 'err' : line.startsWith('ok') ? 'ok' : 'dim';
+      log(line, kind);
+    }
+    if (out.includes('ok     attached')) {
+      attached.add(String(pid));
+      select(pid);
+      status('attached ' + pid, true);
+    } else {
+      status('attach failed', false);
+      btn.disabled = false;
+      btn.textContent = 'Attach';
+    }
+  } catch (e) {
+    log('error  ' + e.message, 'err');
+    status('error', false);
+    btn.disabled = false;
+    btn.textContent = 'Attach';
+  }
+}
+
+async function run() {
+  if (!selected) return;
+  const script = $('#script').value;
+  log('→ exec pid ' + selected + ' (' + script.length + 'b)', 'in');
+  try {
+    log((await api('/api/exec', { pid: selected, script })).trimEnd(), 'ok');
+    status('executed', true);
+  } catch (e) {
+    log('error  ' + e.message, 'err');
+    status('error', false);
+  }
+}
+
+async function readMem() {
+  if (!selected) return;
+  const addr = $('#addr').value.trim();
+  const len = $('#len').value.trim() || '64';
+  log('→ read ' + addr + ' +' + len, 'in');
+  try {
+    log((await api('/api/read', { pid: selected, addr, len })).trimEnd());
+  } catch (e) { log('error  ' + e.message, 'err'); }
+}
+
+async function scanMem() {
+  if (!selected) return;
+  const pattern = $('#pat').value.trim();
+  if (!pattern) return;
+  log('→ scan ' + pattern, 'in');
+  try {
+    log((await api('/api/scan', { pid: selected, pattern })).trimEnd());
+  } catch (e) { log('error  ' + e.message, 'err'); }
+}
+
+function toggleHint() {
+  const h = $('#hint');
+  h.style.display = h.style.display === 'none' ? 'block' : 'none';
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+});
+
+log('solara ui ready', 'dim');
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

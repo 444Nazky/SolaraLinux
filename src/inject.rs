@@ -1,4 +1,4 @@
-use crate::{mem, ptrace};
+use crate::{mem, ptrace, trace};
 use std::ffi::{c_void, CStr};
 use std::fs;
 use std::path::Path;
@@ -11,7 +11,7 @@ fn retry_find_func(pid: i32, name: &str) -> Result<u64, String> {
             Ok(addr) => return Ok(addr),
             Err(_e) if attempt < 19 => {
                 if attempt == 0 {
-                    eprintln!("  waiting for {name} in target maps...");
+                    trace::log(format!("  waiting for {name} in target maps..."));
                 }
                 thread::sleep(Duration::from_millis(50));
             }
@@ -112,8 +112,8 @@ fn stage_so(pid: i32, so_path: &str) -> Result<String, String> {
 
     let target_path = format!("/proc/{pid}/root/tmp/{basename}");
     match fs::copy(src, &target_path) {
-        Ok(_) => eprintln!("  staged  -> {target_path}"),
-        Err(e) => eprintln!("  stage   skipped ({e}), using original path"),
+        Ok(_) => trace::log(format!("  staged  -> {target_path}")),
+        Err(e) => trace::log(format!("  stage   skipped ({e}), using original path")),
     }
     Ok(format!("/tmp/{basename}"))
 }
@@ -122,13 +122,13 @@ pub fn inject_so(pid: i32, so_path: &str, start_symbol: Option<&str>) -> Result<
     // Find function addresses BEFORE attaching.
     // The target must be running so ld.so can finish loading libc.
     let mmap_addr = retry_find_func(pid, "mmap")?;
-    eprintln!("  mmap    @ {mmap_addr:#x}");
+    trace::log(format!("  mmap    @ {mmap_addr:#x}"));
 
     let dlopen_addr = retry_find_func(pid, "dlopen")?;
-    eprintln!("  dlopen  @ {dlopen_addr:#x}");
+    trace::log(format!("  dlopen  @ {dlopen_addr:#x}"));
 
     let dlsym_addr = retry_find_func(pid, "dlsym")?;
-    eprintln!("  dlsym   @ {dlsym_addr:#x}");
+    trace::log(format!("  dlsym   @ {dlsym_addr:#x}"));
 
     // Path as the target will see it (staged into its own /tmp)
     let remote_path = stage_so(pid, so_path)?;
@@ -148,7 +148,7 @@ pub fn inject_so(pid: i32, so_path: &str, start_symbol: Option<&str>) -> Result<
     if remote_buf == !0u64 {
         return Err("mmap returned MAP_FAILED".into());
     }
-    eprintln!("  alloc   @ {remote_buf:#x}");
+    trace::log(format!("  alloc   @ {remote_buf:#x}"));
 
     // Layout in the allocated page:
     //   [0x000] .so path  (NUL-terminated)
@@ -166,18 +166,18 @@ pub fn inject_so(pid: i32, so_path: &str, start_symbol: Option<&str>) -> Result<
     if handle == 0 {
         return Err("dlopen returned NULL (check .so path is valid in target's mount ns)".into());
     }
-    eprintln!("  loaded  handle={handle:#x}");
+    trace::log(format!("  loaded  handle={handle:#x}"));
 
     // dlsym(handle, sym)
     let fn_addr = ptrace::call_remote(pid, dlsym_addr, &[handle, sym_addr])?;
     if fn_addr == 0 {
         return Err(format!("dlsym({sym}) returned NULL — symbol not exported?"));
     }
-    eprintln!("  {sym} @ {fn_addr:#x}");
+    trace::log(format!("  {sym} @ {fn_addr:#x}"));
 
     // Call the exported entry point
     ptrace::call_remote(pid, fn_addr, &[])?;
-    eprintln!("  started");
+    trace::log(format!("  started"));
 
     Ok(())
 }

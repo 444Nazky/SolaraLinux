@@ -2,6 +2,8 @@ mod inject;
 mod mem;
 mod ptrace;
 mod sober;
+mod trace;
+mod ui;
 
 use std::env;
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -99,7 +101,7 @@ fn child_mode() {
     }
 }
 
-fn payload_path() -> Option<String> {
+pub(crate) fn payload_path() -> Option<String> {
     let exe = env::current_exe().ok()?;
     let dir = exe.parent()?;
     let candidates = [
@@ -177,7 +179,7 @@ fn abstract_addr(pid: i32) -> Result<SocketAddr, String> {
     SocketAddr::from_abstract_name(name.as_bytes()).map_err(|e| format!("abstract addr: {e}"))
 }
 
-fn send_script(pid: i32, script: &[u8]) -> Result<String, String> {
+pub(crate) fn send_script(pid: i32, script: &[u8]) -> Result<String, String> {
     let addr = abstract_addr(pid)?;
     let mut s = UnixStream::connect_addr(&addr)
         .map_err(|e| format!("connect @solara-exec-{pid}: {e}"))?;
@@ -341,6 +343,10 @@ fn main() {
             }
         }
         "inject-test" => inject_test(args.get(2).map(String::as_str) == Some("--hold")),
+        "ui" => {
+            let port = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(8787u16);
+            ui::serve(port).unwrap_or_else(|e| die(&e));
+        }
         "selftest" => selftest(),
         _ => usage(),
     }
