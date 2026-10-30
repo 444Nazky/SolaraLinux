@@ -2,7 +2,9 @@ use std::io::{Read, Write};
 use std::os::linux::net::SocketAddrExt;
 use std::os::unix::net::{SocketAddr, UnixListener};
 
-const SOCK_NAME: &[u8] = b"solara-exec";
+fn sock_name() -> Vec<u8> {
+    format!("solara-exec-{}", std::process::id()).into_bytes()
+}
 
 /// Exported so the injector can call it via dlsym after dlopen.
 #[no_mangle]
@@ -11,7 +13,8 @@ pub extern "C" fn solara_payload_start() {
 }
 
 fn server() {
-    let addr = match SocketAddr::from_abstract_name(SOCK_NAME) {
+    let name = sock_name();
+    let addr = match SocketAddr::from_abstract_name(&name) {
         Ok(a) => a,
         Err(_) => return,
     };

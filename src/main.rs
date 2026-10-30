@@ -12,7 +12,6 @@ use std::process::{Command, exit};
 use std::time::Duration;
 
 const MAGIC: &[u8] = b"SOLARA-SELFTEST-0xDEADBEEF";
-const SOCK_NAME: &[u8] = b"solara-exec";
 
 fn die(msg: &str) -> ! {
     eprintln!("error: {msg}");
@@ -138,7 +137,7 @@ fn inject_test(hold: bool) {
 
     let mut ready = false;
     for _ in 0..50 {
-        if let Ok(addr) = abstract_addr() {
+        if let Ok(addr) = abstract_addr(pid) {
             if UnixStream::connect_addr(&addr).is_ok() {
                 ready = true;
                 break;
@@ -150,10 +149,10 @@ fn inject_test(hold: bool) {
         let _ = child.kill();
         die("payload socket never appeared (solara_payload_start not called?)");
     }
-    println!("socket:  @solara-exec (abstract)");
+    println!("socket:  @solara-exec-{pid} (abstract)");
 
     let script = b"print('hello from solara')";
-    match send_script(script) {
+    match send_script(pid, script) {
         Ok(resp) => {
             println!("resp:    {}", resp.replace('\n', "\n         "));
             println!("PASS  injection + ipc verified end-to-end");
@@ -164,18 +163,24 @@ fn inject_test(hold: bool) {
         }
     }
 
+    if hold {
+        println!("holding pid {pid} for 120s — run: solara exec {pid} \"<script>\"");
+        std::thread::sleep(Duration::from_secs(120));
+    }
+
     let _ = child.kill();
     let _ = child.wait();
 }
 
-fn abstract_addr() -> Result<SocketAddr, String> {
-    SocketAddr::from_abstract_name(SOCK_NAME).map_err(|e| format!("abstract addr: {e}"))
+fn abstract_addr(pid: i32) -> Result<SocketAddr, String> {
+    let name = format!("solara-exec-{pid}");
+    SocketAddr::from_abstract_name(name.as_bytes()).map_err(|e| format!("abstract addr: {e}"))
 }
 
-fn send_script(script: &[u8]) -> Result<String, String> {
-    let addr = abstract_addr()?;
+fn send_script(pid: i32, script: &[u8]) -> Result<String, String> {
+    let addr = abstract_addr(pid)?;
     let mut s = UnixStream::connect_addr(&addr)
-        .map_err(|e| format!("connect @solara-exec: {e}"))?;
+        .map_err(|e| format!("connect @solara-exec-{pid}: {e}"))?;
     s.set_read_timeout(Some(Duration::from_secs(5))).ok();
     s.write_all(&(script.len() as u32).to_le_bytes())
         .map_err(|e| e.to_string())?;
@@ -330,7 +335,7 @@ fn main() {
                 .get(3)
                 .unwrap_or_else(|| die("usage: solara exec <pid> <script|file>"));
             let bytes = read_script_arg(script);
-            match send_script(&bytes) {
+            match send_script(pid, &bytes) {
                 Ok(resp) => println!("{resp}"),
                 Err(e) => die(&format!("{e}\n(inject the payload first: solara inject {pid} <libpayload.so>)")),
             }
