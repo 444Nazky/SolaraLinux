@@ -9,7 +9,7 @@ fn retry_find_func(pid: i32, name: &str) -> Result<u64, String> {
     for attempt in 0..20 {
         match find_func_remote(pid, name) {
             Ok(addr) => return Ok(addr),
-            Err(e) if attempt < 19 => {
+            Err(_e) if attempt < 19 => {
                 if attempt == 0 {
                     eprintln!("  waiting for {name} in target maps...");
                 }
@@ -70,7 +70,6 @@ fn find_func_remote(pid: i32, name: &str) -> Result<u64, String> {
         .unwrap_or(&fname)
         .to_string();
 
-    eprintln!("  {name}: local={local_addr:#x} base={local_base:#x} off={offset:#x} lib={lib_name}");
 
     let remote_maps = fs::read_to_string(format!("/proc/{pid}/maps"))
         .map_err(|e| format!("remote maps: {e}"))?;
@@ -98,6 +97,27 @@ fn find_func_remote(pid: i32, name: &str) -> Result<u64, String> {
 /// 5. Find dlopen in target
 /// 6. call_remote(dlopen, path, RTLD_NOW) → .so loads, constructors run
 /// 7. Detach (RAII)
+/// Stage the .so into the target's own filesystem so dlopen resolves it
+/// regardless of mount namespace (Flatpak/Sober runs in a bwrap sandbox).
+/// Returns the path *as seen by the target*.
+fn stage_so(pid: i32, so_path: &str) -> Result<String, String> {
+    let src = Path::new(so_path);
+    if !src.exists() {
+        return Err(format!("{so_path} does not exist"));
+    }
+    let basename = src
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| format!("bad .so filename: {so_path}"))?;
+
+    let target_path = format!("/proc/{pid}/root/tmp/{basename}");
+    match fs::copy(src, &target_path) {
+        Ok(_) => eprintln!("  staged  -> {target_path}"),
+        Err(e) => eprintln!("  stage   skipped ({e}), using original path"),
+    }
+    Ok(format!("/tmp/{basename}"))
+}
+
 pub fn inject_so(pid: i32, so_path: &str, start_symbol: Option<&str>) -> Result<(), String> {
     // Find function addresses BEFORE attaching.
     // The target must be running so ld.so can finish loading libc.
@@ -109,6 +129,9 @@ pub fn inject_so(pid: i32, so_path: &str, start_symbol: Option<&str>) -> Result<
 
     let dlsym_addr = retry_find_func(pid, "dlsym")?;
     eprintln!("  dlsym   @ {dlsym_addr:#x}");
+
+    // Path as the target will see it (staged into its own /tmp)
+    let remote_path = stage_so(pid, so_path)?;
 
     // NOW attach — target is stopped from here until guard drops
     let _guard = ptrace::attach(pid)?;
@@ -130,7 +153,7 @@ pub fn inject_so(pid: i32, so_path: &str, start_symbol: Option<&str>) -> Result<
     // Layout in the allocated page:
     //   [0x000] .so path  (NUL-terminated)
     //   [0x200] start symbol name (NUL-terminated)
-    let path_c = format!("{so_path}\0");
+    let path_c = format!("{remote_path}\0");
     mem::write_mem(pid, remote_buf, path_c.as_bytes())?;
 
     let sym = start_symbol.unwrap_or("solara_payload_start");

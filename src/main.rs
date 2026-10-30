@@ -5,13 +5,14 @@ mod sober;
 
 use std::env;
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::os::unix::net::UnixStream;
+use std::os::linux::net::SocketAddrExt;
+use std::os::unix::net::{SocketAddr, UnixStream};
 use std::path::Path;
 use std::process::{Command, exit};
 use std::time::Duration;
 
 const MAGIC: &[u8] = b"SOLARA-SELFTEST-0xDEADBEEF";
-const SOCK: &str = "/tmp/solara-exec.sock";
+const SOCK_NAME: &[u8] = b"solara-exec";
 
 fn die(msg: &str) -> ! {
     eprintln!("error: {msg}");
@@ -114,7 +115,7 @@ fn payload_path() -> Option<String> {
         .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()).display().to_string())
 }
 
-fn inject_test() {
+fn inject_test(hold: bool) {
     let so = payload_path().unwrap_or_else(|| {
         die("libpayload.so not found. build it: cargo build --release -p payload")
     });
@@ -137,17 +138,19 @@ fn inject_test() {
 
     let mut ready = false;
     for _ in 0..50 {
-        if Path::new(SOCK).exists() {
-            ready = true;
-            break;
+        if let Ok(addr) = abstract_addr() {
+            if UnixStream::connect_addr(&addr).is_ok() {
+                ready = true;
+                break;
+            }
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     if !ready {
         let _ = child.kill();
-        die("payload socket never appeared (constructor did not run?)");
+        die("payload socket never appeared (solara_payload_start not called?)");
     }
-    println!("socket:  {SOCK}");
+    println!("socket:  @solara-exec (abstract)");
 
     let script = b"print('hello from solara')";
     match send_script(script) {
@@ -163,11 +166,16 @@ fn inject_test() {
 
     let _ = child.kill();
     let _ = child.wait();
-    let _ = std::fs::remove_file(SOCK);
+}
+
+fn abstract_addr() -> Result<SocketAddr, String> {
+    SocketAddr::from_abstract_name(SOCK_NAME).map_err(|e| format!("abstract addr: {e}"))
 }
 
 fn send_script(script: &[u8]) -> Result<String, String> {
-    let mut s = UnixStream::connect(SOCK).map_err(|e| format!("connect {SOCK}: {e}"))?;
+    let addr = abstract_addr()?;
+    let mut s = UnixStream::connect_addr(&addr)
+        .map_err(|e| format!("connect @solara-exec: {e}"))?;
     s.set_read_timeout(Some(Duration::from_secs(5))).ok();
     s.write_all(&(script.len() as u32).to_le_bytes())
         .map_err(|e| e.to_string())?;
@@ -327,7 +335,7 @@ fn main() {
                 Err(e) => die(&format!("{e}\n(inject the payload first: solara inject {pid} <libpayload.so>)")),
             }
         }
-        "inject-test" => inject_test(),
+        "inject-test" => inject_test(args.get(2).map(String::as_str) == Some("--hold")),
         "selftest" => selftest(),
         _ => usage(),
     }

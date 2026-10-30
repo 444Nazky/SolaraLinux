@@ -105,13 +105,21 @@ pub fn find_targets() -> Vec<(i32, String, Option<String>)> {
             let Some(pid) = entry.file_name().to_str().and_then(|s| s.parse::<i32>().ok()) else {
                 continue;
             };
-            let Ok(raw) = fs::read(format!("/proc/{pid}/cmdline")) else {
-                continue;
-            };
-            let cmd = String::from_utf8_lossy(&raw).replace('\0', " ");
+            // Match on comm + exe basename only. Full cmdline causes false positives
+            // from shell wrappers like `bash -c ...roblox...`.
             let comm = fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
-            let hay = format!("{} {}", comm.trim(), cmd).to_lowercase();
+            let exe = fs::read_link(format!("/proc/{pid}/exe"))
+                .map(|p| {
+                    p.file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            let hay = format!("{} {}", comm.trim(), exe).to_lowercase();
             if needles.iter().any(|n| hay.contains(n)) {
+                let cmd = fs::read(format!("/proc/{pid}/cmdline"))
+                    .map(|raw| String::from_utf8_lossy(&raw).replace('\0', " "))
+                    .unwrap_or_default();
                 let fpid = namespace_info(pid).flatpak_id;
                 found.push((pid, cmd, fpid));
             }

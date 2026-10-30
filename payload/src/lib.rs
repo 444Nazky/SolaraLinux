@@ -1,21 +1,24 @@
 use std::io::{Read, Write};
-use std::os::unix::net::UnixListener;
+use std::os::linux::net::SocketAddrExt;
+use std::os::unix::net::{SocketAddr, UnixListener};
 
-const SOCK: &str = "/tmp/solara-exec.sock";
+const SOCK_NAME: &[u8] = b"solara-exec";
 
 /// Exported so the injector can call it via dlsym after dlopen.
-/// Runs the IPC socket server on a background thread.
 #[no_mangle]
 pub extern "C" fn solara_payload_start() {
     std::thread::spawn(server);
 }
 
 fn server() {
-    let _ = std::fs::remove_file(SOCK);
-    let l = match UnixListener::bind(SOCK) {
+    let addr = match SocketAddr::from_abstract_name(SOCK_NAME) {
+        Ok(a) => a,
+        Err(_) => return,
+    };
+    let l = match UnixListener::bind_addr(&addr) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("[solara-payload] bind {SOCK}: {e}");
+            eprintln!("[solara-payload] bind abstract: {e}");
             return;
         }
     };
