@@ -13,6 +13,25 @@ Produces:
 - `target/release/solara` — the CLI
 - `target/release/libpayload.so` — the injected shared object
 
+## UI
+
+```sh
+solara ui            # http://127.0.0.1:8787, opens in your browser
+solara ui 6799       # custom port
+```
+
+A single-page control panel served from the binary — no GTK/WebKit, no extra
+dependencies. It talks to `127.0.0.1` only.
+
+- **Targets** — auto-refreshes every 5 s; click a row to select, `Attach` injects
+- **Execute** — script box, `Execute` button (or `Ctrl+Enter`)
+- **Memory** — read at an address, scan for a hex byte pattern
+- **Output** — full injection trace (`mmap @ …`, `dlopen @ …`, `staged →`, …)
+
+If attach fails with `Operation not permitted`, the panel prints the trace up to
+the failure and the ptrace hint. Start it with `sudo` or enable ptrace for the
+session first.
+
 ## Attach
 
 ```sh
