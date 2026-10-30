@@ -1,1 +1,1 @@
-/home/nazky/RPL/SolaraLinux/target/release/solara: /home/nazky/RPL/SolaraLinux/src/main.rs
+/home/nazky/RPL/SolaraLinux/target/release/solara: /home/nazky/RPL/SolaraLinux/src/inject.rs /home/nazky/RPL/SolaraLinux/src/main.rs /home/nazky/RPL/SolaraLinux/src/mem.rs /home/nazky/RPL/SolaraLinux/src/ptrace.rs /home/nazky/RPL/SolaraLinux/src/sober.rs
