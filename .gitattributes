@@ -1,8 +1,11 @@
-# Never let build output influence language stats
+# Build output never influences language stats
 /target/** linguist-vendored
 *.so linguist-vendored
 *.o linguist-vendored
 *.bin linguist-vendored
 
-# Cargo.lock is generated
+# UI markup is an asset; behaviour lives in app.js / app.css
+src/ui_assets/index.html linguist-vendored
+
+# Generated
 Cargo.lock linguist-generated

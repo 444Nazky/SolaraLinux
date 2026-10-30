@@ -106,6 +106,7 @@ pub(crate) fn payload_path() -> Option<String> {
     let dir = exe.parent()?;
     let candidates = [
         dir.join("libpayload.so"),
+        dir.join("../lib/solara/libpayload.so"),
         dir.join("../payload/libpayload.so"),
         dir.join("../../payload/libpayload.so"),
         dir.join("../../target/release/libpayload.so"),

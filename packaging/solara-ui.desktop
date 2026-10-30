@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=solara
+GenericName=Roblox process toolkit
+Comment=Attach to a Linux Roblox client and drive it from a control panel
+Exec=@BINDIR@/solara ui @PORT@
+Icon=utilities-terminal
+Terminal=true
+Categories=Development;Utility;
+Keywords=roblox;sober;ptrace;memory;
+StartupNotify=false
+X-Solara-Payload=@LIBDIR@/libpayload.so

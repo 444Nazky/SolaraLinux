@@ -4,6 +4,8 @@ use std::net::{TcpListener, TcpStream};
 use std::thread;
 
 const INDEX: &str = include_str!("ui_assets/index.html");
+const APP_CSS: &str = include_str!("ui_assets/app.css");
+const APP_JS: &str = include_str!("ui_assets/app.js");
 
 pub fn serve(port: u16) -> Result<(), String> {
     let listener = TcpListener::bind(("127.0.0.1", port))
@@ -68,6 +70,8 @@ fn route(method: &str, path: &str, form: &[(String, String)]) -> (&'static str, 
         ("GET", "/") | ("GET", "/index.html") => {
             ("text/html; charset=utf-8", INDEX.to_string())
         }
+        ("GET", "/app.css") => ("text/css; charset=utf-8", APP_CSS.to_string()),
+        ("GET", "/app.js") => ("application/javascript; charset=utf-8", APP_JS.to_string()),
         ("GET", "/api/processes") => ("text/plain; charset=utf-8", list_processes()),
         ("POST", "/api/attach") => ("text/plain; charset=utf-8", op_attach(form)),
         ("POST", "/api/exec") => ("text/plain; charset=utf-8", op_exec(form)),
