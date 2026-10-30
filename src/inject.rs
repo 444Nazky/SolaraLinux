@@ -1,10 +1,19 @@
 use crate::{mem, ptrace};
-use std::ffi::c_void;
+use std::ffi::{c_void, CStr};
 use std::fs;
 use std::path::Path;
 
+#[repr(C)]
+struct DlInfo {
+    dli_fname: *const u8,
+    dli_fbase: *mut c_void,
+    dli_sname: *const u8,
+    dli_saddr: *mut c_void,
+}
+
 extern "C" {
     fn dlsym(handle: *mut c_void, symbol: *const u8) -> *mut c_void;
+    fn dladdr(addr: *mut c_void, info: *mut DlInfo) -> i32;
 }
 
 fn local_sym(name: &str) -> Result<u64, String> {
@@ -18,47 +27,52 @@ fn local_sym(name: &str) -> Result<u64, String> {
 }
 
 /// Find a function's address in a remote process.
-/// Uses dlsym locally + libc offset math: remote = remote_base + (local - local_base)
+/// 1. dlsym locally → get function address
+/// 2. dladdr → get the library load base + filename
+/// 3. offset = func_addr - load_base
+/// 4. Find the first mapping of the same library in remote /proc/pid/maps
+/// 5. remote_func = remote_first_mapping_start + offset
 fn find_func_remote(pid: i32, name: &str) -> Result<u64, String> {
     let local_addr = local_sym(name)?;
 
-    let self_maps = fs::read_to_string("/proc/self/maps")
-        .map_err(|e| format!("self maps: {e}"))?;
+    let mut info: DlInfo = unsafe { std::mem::zeroed() };
+    let r = unsafe { dladdr(local_addr as *mut c_void, &mut info) };
+    if r == 0 {
+        return Err(format!("dladdr({name}) failed"));
+    }
+
+    let local_base = info.dli_fbase as u64;
+    let offset = local_addr.wrapping_sub(local_base);
+
+    let fname_cstr = unsafe { CStr::from_ptr(info.dli_fname as *const i8) };
+    let fname = fname_cstr.to_string_lossy().to_string();
+    let lib_name = Path::new(&fname)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&fname)
+        .to_string();
+
+    eprintln!("  dbg     {name}: local={local_addr:#x} base={local_base:#x} off={offset:#x} lib={lib_name}");
+
     let remote_maps = fs::read_to_string(format!("/proc/{pid}/maps"))
         .map_err(|e| format!("remote maps: {e}"))?;
 
-    for line in self_maps.lines() {
-        if !line.contains("r-xp") {
-            continue;
-        }
-        let mut parts = line.split_whitespace();
-        let range = parts.next().unwrap_or("");
-        let Some((s, e)) = range.split_once('-') else { continue };
-        let Ok(start) = u64::from_str_radix(s, 16) else { continue };
-        let Ok(end) = u64::from_str_radix(e, 16) else { continue };
+    eprintln!("  dbg     remote maps first 5 lines:");
+    for line in remote_maps.lines().take(5) {
+        eprintln!("    {line}");
+    }
 
-        if local_addr >= start && local_addr < end {
-            let lib_path = parts.last().unwrap_or("");
-            let lib_name = Path::new(lib_path)
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or(lib_path);
-
-            for rline in remote_maps.lines() {
-                if rline.contains("r-xp") && rline.contains(lib_name) {
-                    let rrange = rline.split_whitespace().next().unwrap_or("");
-                    let rstart_str = rrange.split('-').next().unwrap_or("");
-                    let remote_base = u64::from_str_radix(rstart_str, 16)
-                        .map_err(|e| format!("bad addr: {e}"))?;
-                    let offset = local_addr - start;
-                    return Ok(remote_base + offset);
-                }
-            }
-            return Err(format!("{lib_name} not found in remote maps"));
+    for line in remote_maps.lines() {
+        if line.contains(lib_name.as_str()) {
+            let range = line.split_whitespace().next().unwrap_or("");
+            let start_str = range.split('-').next().unwrap_or("");
+            let remote_base = u64::from_str_radix(start_str, 16)
+                .map_err(|e| format!("bad addr: {e}"))?;
+            return Ok(remote_base.wrapping_add(offset));
         }
     }
 
-    Err(format!("could not locate {name} in any local r-xp region"))
+    Err(format!("{lib_name} not found in remote maps"))
 }
 
 /// Inject a .so into a remote process via ptrace + dlopen.
